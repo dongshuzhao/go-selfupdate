@@ -120,10 +120,12 @@ func createUpdate(path string, platform string) {
 	}
 
 	// spin up parallel workers to process the files:
-	numWorkers := runtime.NumCPU()
+	numCPUs := runtime.NumCPU()
+	numWorkers := numCPUs
 	if numWorkers > 6 {
 		numWorkers = 6
 	}
+	fmt.Printf("Number of CPUs: %d\n", numCPUs)
 	fmt.Printf("Number of workers: %d\n", numWorkers)
 	filesChan := make(chan fs.DirEntry)
 	var wg sync.WaitGroup
