@@ -74,10 +74,13 @@ func createUpdate(path string, platform string) {
 	err = os.WriteFile(filepath.Join(genDir, version, platform+".gz"), buf.Bytes(), 0755)
 
 	processUpdate := func(file fs.DirEntry) {
+		fmt.Printf("Processing %s\n", file.Name())
 		if !file.IsDir() {
+			fmt.Printf("%s is not a directory, skipped\n", file.Name())
 			return
 		}
 		if file.Name() == version {
+			fmt.Printf("%s is current version, skipped\n", file.Name())
 			return
 		}
 
@@ -103,9 +106,11 @@ func createUpdate(path string, platform string) {
 		defer br.Close()
 		patch := new(bytes.Buffer)
 		if err := binarydist.Diff(ar, br, patch); err != nil {
+			fmt.Printf("Failed to bsdiff %s, exiting\n", file.Name())
 			panic(err)
 		}
 		os.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)
+		fmt.Printf("Done with %s\n", file.Name())
 	}
 
 	files, err := os.ReadDir(genDir)
@@ -115,6 +120,7 @@ func createUpdate(path string, platform string) {
 
 	// spin up parallel workers to process the files:
 	numWorkers := runtime.NumCPU()
+	fmt.Printf("Number of workers: %d\n", numWorkers)
 	filesChan := make(chan fs.DirEntry)
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
