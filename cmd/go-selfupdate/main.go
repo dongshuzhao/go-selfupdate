@@ -90,6 +90,7 @@ func createUpdate(path string, platform string) {
 		old, err := os.Open(fName)
 		if err != nil {
 			// Don't have an old release for this os/arch, continue on
+			fmt.Printf("%s found no release for this os/arch, skipped\n", file.Name())
 			return
 		}
 
