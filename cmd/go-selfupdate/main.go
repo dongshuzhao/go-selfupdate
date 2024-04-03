@@ -8,10 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 
 	"github.com/kr/binarydist"
 )
@@ -25,14 +26,14 @@ type current struct {
 
 func generateSha256(path string) []byte {
 	h := sha256.New()
-	b, err := ioutil.ReadFile(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		fmt.Println(err)
 	}
 	h.Write(b)
 	sum := h.Sum(nil)
 	return sum
-	//return base64.URLEncoding.EncodeToString(sum)
+	// return base64.URLEncoding.EncodeToString(sum)
 }
 
 type gzReader struct {
@@ -60,40 +61,24 @@ func newGzReader(r io.ReadCloser) io.ReadCloser {
 }
 
 func createUpdate(path string, platform string) {
-	c := current{Version: version, Sha256: generateSha256(path)}
-
-	b, err := json.MarshalIndent(c, "", "    ")
-	if err != nil {
-		fmt.Println("error:", err)
-	}
-	err = ioutil.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
-	if err != nil {
-		panic(err)
-	}
-
 	os.MkdirAll(filepath.Join(genDir, version), 0755)
 
 	var buf bytes.Buffer
 	w := gzip.NewWriter(&buf)
-	f, err := ioutil.ReadFile(path)
+	f, err := os.ReadFile(path)
 	if err != nil {
 		panic(err)
 	}
 	w.Write(f)
 	w.Close() // You must close this first to flush the bytes to the buffer.
-	err = ioutil.WriteFile(filepath.Join(genDir, version, platform+".gz"), buf.Bytes(), 0755)
+	err = os.WriteFile(filepath.Join(genDir, version, platform+".gz"), buf.Bytes(), 0755)
 
-	files, err := ioutil.ReadDir(genDir)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	for _, file := range files {
-		if file.IsDir() == false {
-			continue
+	processUpdate := func(file fs.DirEntry) {
+		if !file.IsDir() {
+			return
 		}
 		if file.Name() == version {
-			continue
+			return
 		}
 
 		os.Mkdir(filepath.Join(genDir, file.Name(), version), 0755)
@@ -102,7 +87,7 @@ func createUpdate(path string, platform string) {
 		old, err := os.Open(fName)
 		if err != nil {
 			// Don't have an old release for this os/arch, continue on
-			continue
+			return
 		}
 
 		fName = filepath.Join(genDir, version, platform+".gz")
@@ -120,7 +105,42 @@ func createUpdate(path string, platform string) {
 		if err := binarydist.Diff(ar, br, patch); err != nil {
 			panic(err)
 		}
-		ioutil.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)
+		os.WriteFile(filepath.Join(genDir, file.Name(), version, platform), patch.Bytes(), 0755)
+	}
+
+	files, err := os.ReadDir(genDir)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// spin up parallel workers to process the files:
+	numWorkers := runtime.NumCPU()
+	filesChan := make(chan fs.DirEntry)
+	var wg sync.WaitGroup
+	wg.Add(numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			for file := range filesChan {
+				processUpdate(file)
+			}
+			wg.Done()
+		}()
+	}
+	for _, file := range files {
+		filesChan <- file
+	}
+	close(filesChan)
+	wg.Wait()
+
+	c := current{Version: version, Sha256: generateSha256(path)}
+
+	b, err := json.MarshalIndent(c, "", "    ")
+	if err != nil {
+		fmt.Println("error:", err)
+	}
+	err = os.WriteFile(filepath.Join(genDir, platform+".json"), b, 0755)
+	if err != nil {
+		panic(err)
 	}
 }
 
@@ -170,7 +190,7 @@ func main() {
 	}
 
 	if fi.IsDir() {
-		files, err := ioutil.ReadDir(appPath)
+		files, err := os.ReadDir(appPath)
 		if err == nil {
 			for _, file := range files {
 				createUpdate(filepath.Join(appPath, file.Name()), file.Name())

@@ -396,7 +396,7 @@ func (u *Updater) fetch(url string) (io.ReadCloser, error) {
 }
 
 func readTime(path string) time.Time {
-	p, err := ioutil.ReadFile(path)
+	p, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return time.Time{}
 	}
@@ -417,5 +417,5 @@ func verifySha(bin []byte, sha []byte) bool {
 }
 
 func writeTime(path string, t time.Time) bool {
-	return ioutil.WriteFile(path, []byte(t.Format(time.RFC3339)), 0644) == nil
+	return os.WriteFile(path, []byte(t.Format(time.RFC3339)), 0644) == nil
 }
